@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sprint Metrics</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #fff; --text: #1d2330; --muted: #667085; --line: #e3e6ea;
+    --c-main: #2f6fdb; --c-light: #b8c4d6; --c-avg: #e07b1a; --c-roll: #1a9c6b; --c-ideal: #8a8f98; --c-bug: #d9534f;
+    --good: #1a9c6b; --bad: #d9534f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11151c; --card: #1a202b; --text: #e6e9ef; --muted: #98a2b3; --line: #2b3342;
+            --c-main: #5b9bff; --c-light: #46536b; --c-avg: #f0a050; --c-roll: #3fd09a; --c-ideal: #8a93a3; --c-bug: #ff7b72; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", Helvetica, Arial, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 14px 24px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  h1 { font-size: 18px; margin: 0; }
+  .live { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); animation: pulse 2s infinite; }
+  .dot.off { background: var(--bad); animation: none; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(26,156,107,.5); } 70% { box-shadow: 0 0 0 8px rgba(26,156,107,0); } 100% { box-shadow: 0 0 0 0 rgba(26,156,107,0); } }
+  .spacer { flex: 1; }
+  select, input[type=search], button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  button { cursor: pointer; } button:hover { border-color: var(--c-main); }
+  button.primary { background: var(--c-main); color: #fff; border-color: var(--c-main); }
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+  .banner { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; background: rgba(217,83,79,.12); border: 1px solid var(--bad); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .kpi .sub { color: var(--muted); font-size: 12px; }
+  .flash { animation: flash 1.2s; } @keyframes flash { 0% { background: rgba(47,111,219,.25); } 100% { background: transparent; } }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card h2 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  .card h2 select { margin-left: auto; padding: 3px 8px; }
+  .chart { position: relative; height: 300px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; user-select: none; }
+  .scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+  .pill { padding: 1px 8px; border-radius: 10px; font-size: 12px; background: var(--line); }
+  .pill.Done, .pill.closed { background: rgba(26,156,107,.18); } .pill.active { background: rgba(47,111,219,.2); }
+  .pill.Bug { background: rgba(217,83,79,.18); }
+  .drop { display: none; position: fixed; inset: 0; background: rgba(47,111,219,.15); border: 3px dashed var(--c-main); z-index: 20; align-items: center; justify-content: center; font-size: 22px; }
+  .toast { position: fixed; right: 20px; bottom: 20px; background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px; opacity: 0; transition: opacity .25s; z-index: 30; max-width: 380px; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sprint Metrics</h1>
+  <div class="live"><span class="dot" id="dot"></span><span id="liveText">Connecting...</span></div>
+  <div class="spacer"></div>
+  <select id="fType" aria-label="Issue type"><option value="">All types</option></select>
+  <select id="fAssignee" aria-label="Assignee"><option value="">All assignees</option></select>
+  <button id="btnSim" title="Moves one issue in the active sprint forward and rewrites the CSV, like live Jira activity">Simulate activity</button>
+  <button id="btnSample" title="Replace the CSV with fresh sample data">New sample data</button>
+  <button class="primary" id="btnUpload">Upload CSV</button>
+  <input type="file" id="file" accept=".csv,text/csv" hidden>
+</header>
+<main>
+  <div class="banner" id="banner"></div>
+  <section class="kpis">
+    <div class="card kpi"><div class="label">Avg velocity</div><div class="value" id="kVel">-</div><div class="sub">points / sprint</div></div>
+    <div class="card kpi"><div class="label">Next sprint forecast</div><div class="value" id="kFc">-</div><div class="sub" id="kFcSub"></div></div>
+    <div class="card kpi"><div class="label">Completion rate</div><div class="value" id="kRate">-</div><div class="sub">of scope, avg</div></div>
+    <div class="card kpi"><div class="label">Scope creep</div><div class="value" id="kCreep">-</div><div class="sub">added mid-sprint</div></div>
+    <div class="card kpi"><div class="label">Cycle time (median)</div><div class="value" id="kCt">-</div><div class="sub" id="kCtSub"></div></div>
+  </section>
+  <section class="grid">
+    <div class="card"><h2>Velocity</h2><div class="chart"><canvas id="cVel"></canvas></div></div>
+    <div class="card"><h2>Burndown <select id="sSprint" aria-label="Sprint"></select></h2><div class="chart"><canvas id="cBurn"></canvas></div></div>
+    <div class="card"><h2>Cycle time per issue (when resolved)</h2><div class="chart"><canvas id="cScatter"></canvas></div></div>
+    <div class="card"><h2>Cycle time distribution</h2><div class="chart"><canvas id="cHist"></canvas></div></div>
+  </section>
+  <section class="card" style="margin-bottom:14px"><h2>Sprints</h2>
+    <div class="scroll"><table id="tSprints"><thead><tr><th>Sprint</th><th>Dates</th><th>State</th><th>Committed</th><th>Added</th><th>Completed</th><th>Completion</th><th>Done / issues</th><th>Median cycle</th></tr></thead><tbody></tbody></table></div>
+  </section>
+  <section class="card"><h2>Issues <input type="search" id="q" placeholder="Search key, summary, status..." style="margin-left:auto;min-width:240px"></h2>
+    <div class="scroll"><table id="tIssues"><thead><tr><th data-k="key">Key</th><th data-k="summary">Summary</th><th data-k="type">Type</th><th data-k="status">Status</th><th data-k="points">Pts</th><th data-k="assignee">Assignee</th><th data-k="started">Started</th><th data-k="resolved">Resolved</th></tr></thead><tbody></tbody></table></div>
+  </section>
+</main>
+<div class="drop" id="drop">Drop a Jira CSV export to load it</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const POLL_MS = 2000;
+let data = null, version = "", sort = { k: "key", dir: 1 }, charts = {};
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = (v, d = 1) => v == null ? "-" : (+v).toFixed(d).replace(/\.0+$/, "");
+const filterKey = () => $("fType").value + "|" + $("fAssignee").value;
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3500);
+}
+function setKpi(id, text) {
+  const el = $(id); if (el.textContent !== text) { el.textContent = text; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+}
+function banner(msg) { const b = $("banner"); b.style.display = msg ? "block" : "none"; b.textContent = msg || ""; }
+
+async function api(path, opts) {
+  const r = await fetch(path, opts); const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function refresh(force = false) {
+  try {
+    const q = new URLSearchParams({ type: $("fType").value, assignee: $("fAssignee").value, f: filterKey() });
+    if (!force && version) q.set("since", version + filterKey());
+    const j = await api("/api/metrics?" + q);
+    $("dot").classList.remove("off");
+    if (!j.unchanged) { data = j; version = j.version; banner(""); render(); }
+    $("liveText").textContent = "Live, checked " + new Date().toLocaleTimeString() + (data ? " | " + data.file : "");
+  } catch (e) {
+    if (e instanceof TypeError) { $("dot").classList.add("off"); $("liveText").textContent = "Server not reachable, retrying..."; }
+    else { banner("Cannot read the CSV: " + e.message + " (showing last good data)"); }
+  }
+}
+
+function fillSelect(el, items, label) {
+  const cur = el.value;
+  el.innerHTML = `<option value="">${label}</option>` + items.map(i => `<option>${esc(i)}</option>`).join("");
+  el.value = items.includes(cur) ? cur : "";
+}
+
+function upsert(id, cfg) {
+  if (charts[id]) { charts[id].data = cfg.data; charts[id].options = cfg.options; charts[id].update(); }
+  else charts[id] = new Chart($(id), { type: { cVel: "bar", cBurn: "line", cScatter: "scatter", cHist: "bar" }[id], ...cfg });
+}
+
+function baseOpts(extra = {}) {
+  Chart.defaults.color = css("--muted");
+  Chart.defaults.borderColor = css("--line");
+  return Object.assign({ responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+                         plugins: { legend: { position: "bottom", labels: { boxWidth: 12 } } } }, extra);
+}
+
+function render() {
+  const d = data, k = d.kpis;
+  fillSelect($("fType"), d.types, "All types");
+  fillSelect($("fAssignee"), d.assignees, "All assignees");
+  const prev = $("sSprint").value, names = d.sprints.map(s => s.sprint);
+  const active = d.sprints.find(s => s.state === "active");
+  $("sSprint").innerHTML = names.map(n => `<option>${esc(n)}</option>`).join("");
+  $("sSprint").value = names.includes(prev) ? prev : (active ? active.sprint : names[names.length - 1]);
+
+  setKpi("kVel", fmt(k.avg_velocity));
+  setKpi("kFc", fmt(k.forecast, 0));
+  $("kFcSub").textContent = `range ${fmt(k.forecast_min, 0)}-${fmt(k.forecast_max, 0)} (last 3 sprints)`;
+  setKpi("kRate", Math.round(k.completion * 100) + "%");
+  setKpi("kCreep", Math.round(k.creep * 100) + "%");
+  const st = d.cycle.stats;
+  setKpi("kCt", st ? fmt(st.median) + " d" : "-");
+  $("kCtSub").textContent = st ? `P85 ${fmt(st.p85)} d | P95 ${fmt(st.p95)} d | ${st.n} issues` : "no finished issues";
+
+  renderVelocity(); renderBurndown(); renderCycle(); renderTables();
+}
+
+function renderVelocity() {
+  const v = data.velocity, done = v.map(r => r.completed);
+  const roll = done.map((_, i) => { const s = done.slice(Math.max(0, i - 2), i + 1); return s.reduce((a, b) => a + b, 0) / s.length; });
+  const avg = data.kpis.avg_velocity;
+  upsert("cVel", { data: { labels: v.map(r => r.sprint), datasets: [
+    { type: "bar", label: "Committed + added", data: v.map(r => r.committed + r.added), backgroundColor: css("--c-light"), order: 3 },
+    { type: "bar", label: "Completed", data: done, backgroundColor: css("--c-main"), order: 2 },
+    { type: "line", label: "3-sprint rolling avg", data: roll, borderColor: css("--c-roll"), backgroundColor: css("--c-roll"), tension: .25, order: 1 },
+    { type: "line", label: "Average", data: done.map(() => avg), borderColor: css("--c-avg"), borderDash: [6, 4], pointRadius: 0, order: 1 },
+  ] }, options: baseOpts({ scales: { y: { beginAtZero: true, title: { display: true, text: "Story points" } } } }) });
+}
+
+function renderBurndown() {
+  const b = data.burndown[$("sSprint").value]; if (!b) return;
+  upsert("cBurn", { data: { labels: b.ideal.map((_, i) => "Day " + i), datasets: [
+    { label: "Ideal", data: b.ideal, borderColor: css("--c-ideal"), borderDash: [6, 4], pointRadius: 0 },
+    { label: "Remaining", data: b.remaining, borderColor: css("--c-main"), backgroundColor: css("--c-main"), pointRadius: 3, tension: 0 },
+  ] }, options: baseOpts({ scales: { y: { beginAtZero: true, title: { display: true, text: "Remaining story points" } } } }) });
+}
+
+function renderCycle() {
+  const pts = data.cycle.points, st = data.cycle.stats, origin = new Date(data.origin + "T00:00:00");
+  const typeColor = { Story: css("--c-main"), Bug: css("--c-bug"), Task: css("--c-roll") };
+  const extra = ["#8a6fdb", "#c9a227", "#888"];
+  const types = [...new Set(pts.map(p => p.type))];
+  const xs = pts.map(p => p.x), xmin = Math.min(0, ...xs), xmax = Math.max(1, ...xs);
+  const lines = st ? [["Median", st.median, "--c-avg"], ["P85", st.p85, "--c-roll"], ["P95", st.p95, "--c-bug"]].map(([n, y, c]) => (
+    { type: "line", label: `${n} ${fmt(y)}d`, data: [{ x: xmin, y }, { x: xmax, y }], borderColor: css(c), borderDash: [6, 4], pointRadius: 0, borderWidth: 2 })) : [];
+  upsert("cScatter", { data: { datasets: [
+    ...types.map((t, i) => ({ type: "scatter", label: t, backgroundColor: typeColor[t] || extra[i % 3],
+      data: pts.filter(p => p.type === t).map(p => ({ x: p.x, y: p.days, key: p.key, who: p.assignee })) })), ...lines ] },
+    options: baseOpts({ interaction: { mode: "nearest", intersect: true }, scales: {
+      x: { type: "linear", min: xmin, max: xmax, ticks: { callback: v => new Date(origin.getTime() + v * 864e5).toLocaleDateString(undefined, { month: "short", day: "numeric" }), maxTicksLimit: 8 } },
+      y: { beginAtZero: true, title: { display: true, text: "Days" } } },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 12 } }, tooltip: { callbacks: { label: c => c.raw.key ? `${c.raw.key} (${c.raw.who}): ${fmt(c.raw.y)} d` : c.dataset.label } } } }) });
+
+  const top = Math.max(1, Math.ceil(Math.max(0, ...pts.map(p => p.days)))), bins = Array(top).fill(0);
+  pts.forEach(p => bins[Math.min(Math.floor(p.days), top - 1)]++);
+  upsert("cHist", { data: { labels: bins.map((_, i) => `${i}-${i + 1}`), datasets: [{ label: "Issues", data: bins, backgroundColor: css("--c-main") }] },
+    options: baseOpts({ plugins: { legend: { display: false } }, scales: { x: { title: { display: true, text: "Days" } }, y: { beginAtZero: true, ticks: { precision: 0 } } } }) });
+}
+
+function renderTables() {
+  $("tSprints").tBodies[0].innerHTML = data.sprints.map(s => `<tr><td>${esc(s.sprint)}</td><td>${s.start} to ${s.end}</td>
+    <td><span class="pill ${s.state}">${s.state}</span></td><td>${fmt(s.committed, 0)}</td><td>${fmt(s.added, 0)}</td><td>${fmt(s.completed, 0)}</td>
+    <td>${Math.round(s.rate * 100)}%</td><td>${s.done} / ${s.issues}</td><td>${s.median_cycle == null ? "-" : fmt(s.median_cycle) + " d"}</td></tr>`).join("");
+  renderIssues();
+}
+
+function renderIssues() {
+  if (!data) return;
+  const q = $("q").value.toLowerCase(), sprint = $("sSprint").value;
+  const rows = data.issues.filter(i => i.sprint === sprint && (!q || [i.key, i.summary, i.status, i.type, i.assignee].join(" ").toLowerCase().includes(q)))
+    .sort((a, b) => (a[sort.k] > b[sort.k] ? 1 : a[sort.k] < b[sort.k] ? -1 : 0) * sort.dir);
+  $("tIssues").tBodies[0].innerHTML = rows.map(i => `<tr><td>${esc(i.key)}</td><td>${esc(i.summary)}</td><td><span class="pill ${esc(i.type)}">${esc(i.type)}</span></td>
+    <td><span class="pill ${esc(i.status)}">${esc(i.status)}</span></td><td>${fmt(i.points, 0)}</td><td>${esc(i.assignee)}</td>
+    <td>${esc((i.started || "").replace("T", " "))}</td><td>${esc((i.resolved || "").replace("T", " "))}</td></tr>`).join("") || `<tr><td colspan="8">No issues</td></tr>`;
+}
+
+async function act(path, okMsg, opts = { method: "POST" }) {
+  try { const j = await api(path, opts); toast(typeof okMsg === "function" ? okMsg(j) : okMsg); await refresh(true); }
+  catch (e) { toast(e.message); }
+}
+async function upload(file) {
+  if (!file) return;
+  await act("/api/upload", `Loaded ${file.name}`, { method: "POST", body: await file.arrayBuffer() });
+  $("file").value = "";
+}
+
+$("fType").onchange = $("fAssignee").onchange = () => refresh(true);
+$("sSprint").onchange = () => { renderBurndown(); renderIssues(); };
+$("q").oninput = renderIssues;
+$("btnUpload").onclick = () => $("file").click();
+$("file").onchange = e => upload(e.target.files[0]);
+$("btnSim").onclick = () => act("/api/simulate", j => `${j.key} moved to ${j.status}`);
+$("btnSample").onclick = () => confirm("Replace the current CSV with new sample data?") && act("/api/sample", "Sample data generated");
+document.querySelectorAll("#tIssues th").forEach(th => th.onclick = () => { sort = { k: th.dataset.k, dir: sort.k === th.dataset.k ? -sort.dir : 1 }; renderIssues(); });
+
+let dragDepth = 0;
+addEventListener("dragenter", e => { e.preventDefault(); dragDepth++; $("drop").style.display = "flex"; });
+addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("drop").style.display = "none"; } });
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("drop").style.display = "none"; upload(e.dataTransfer.files[0]); });
+
+refresh(true);
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>
