@@ -2,6 +2,8 @@
 
 Reads a Jira-style CSV export and produces a velocity chart, per-sprint burndown charts, cycle time stats and a markdown sprint report. Python 3.10+, standard library only (charts are plain SVG).
 
+![Live dashboard](docs/dashboard.png)
+
 ## Live dashboard (localhost)
 
 ```bash
