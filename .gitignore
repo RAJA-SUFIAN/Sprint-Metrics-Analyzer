@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.tmp
+.claude/
+# generated on first run
+data/
+output/
